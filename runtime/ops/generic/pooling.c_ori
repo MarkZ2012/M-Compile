@@ -1,0 +1,14 @@
+// runtime/ops/pooling.c
+#include "ops.h"
+
+void op_avgpool_global(const float* x, int N, int C, int H, int W, float* out) {
+    int HW = H * W;
+    for (int n = 0; n < N; n++) {
+        for (int c = 0; c < C; c++) {
+            float sum = 0.0f;
+            const float* ptr = x + (n * C + c) * HW;
+            for (int i = 0; i < HW; i++) sum += ptr[i];
+            out[n * C + c] = sum / HW;
+        }
+    }
+}
