@@ -18,33 +18,85 @@ M-Compile 是一个将 ONNX 模型编译为高性能 C 代码的 AI 编译器工
 
 ```
 M-Compile/
-├── my_ai_compiler/          # 编译器核心代码
-│   ├── frontend/           # 前端：ONNX 解析器
-│   │   ├── onnx_parser.py  # ONNX 模型解析
-│   │   └── graph_ir.py     # 图中间表示定义
-│   ├── optimizer/          # 优化器
-│   │   ├── pass_manager.py # 优化 pass 管理
-│   │   └── passes/         # 具体优化实现
-│   ├── backend/            # 后端：代码生成
-│   │   ├── emitter.py      # 代码生成主驱动
-│   │   ├── core/           # 核心组件
-│   │   │   ├── allocator.py    # 内存分配器
-│   │   │   └── shape_infer.py  # 形状推断
-│   │   └── targets/        # 目标平台实现
-│   │       ├── generic_c.py    # 通用 C 代码生成
-│   │       ├── x86_avx.py      # x86 AVX 优化
-│   │       └── arm_neon.py     # ARM NEON 优化
-│   ├── runtime/            # 运行时库
-│   │   ├── include/        # 头文件
-│   │   └── ops/            # 算子实现
-│   │       ├── generic/    # 通用算子实现
-│   │       ├── x86_avx/    # x86 优化算子
-│   │       └── arm_neon/   # ARM 优化算子
-│   └── tools/              # 工具脚本
-│       ├── compile.py      # 主编译入口
-│       └── test/           # 测试示例
-├── build/                  # 构建输出目录
-└── README.md              # 本文件
+├── my_ai_compiler/
+│   ├── backend/
+│   │   ├── core/
+│   │   │   ├── __init__.py
+│   │   │   ├── allocator.py
+│   │   │   └── shape_infer.py
+│   │   ├── kernels/
+│   │   │   ├── generic/
+│   │   │   │   └── __init__.py
+│   │   │   ├── x86_avx/
+│   │   │   │   └── __init__.py
+│   │   │   ├── __init__.py
+│   │   │   └── base.py
+│   │   ├── targets/
+│   │   │   ├── __init__.py
+│   │   │   ├── arm_neon.py
+│   │   │   ├── base.py
+│   │   │   ├── generic_c.py
+│   │   │   └── x86_avx.py
+│   │   ├── __init__.py
+│   │   └── emitter.py
+│   ├── frontend/
+│   │   ├── __init__.py
+│   │   ├── graph_ir.py
+│   │   └── onnx_parser.py
+│   ├── optimizer/
+│   │   ├── passes/
+│   │   │   ├── fusion/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── conv_bn_fusion.py
+│   │   │   │   └── gemm_fusion.py
+│   │   │   ├── quantization/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── ptq.py
+│   │   │   │   └── qat.py
+│   │   │   ├── rewrite/
+│   │   │   │   ├── __init__.py
+│   │   │   │   └── layout_transform.py
+│   │   │   ├── __init__.py
+│   │   │   ├── constant_fold.py
+│   │   │   └── dead_code_elim.py
+│   │   ├── __init__.py
+│   │   └── pass_manager.py
+│   ├── runtime/
+│   │   ├── include/
+│   │   │   └── myrt.h
+│   │   ├── ops/
+│   │   │   ├── arm_neon/
+│   │   │   ├── generic/
+│   │   │   │   ├── __init__.py
+│   │   │   │   ├── activations.c
+│   │   │   │   ├── batchnorm.c
+│   │   │   │   ├── conv2d.c
+│   │   │   │   ├── linear.c
+│   │   │   │   ├── math_ops.c
+│   │   │   │   ├── ops.h
+│   │   │   │   ├── pooling.c
+│   │   │   │   └── softmax.c
+│   │   │   └── x86_avx/
+│   │   ├── src/
+│   │   │   └── loader.c
+│   │   └── __init__.py
+│   ├── tools/
+│   │   ├── model/
+│   │   │   ├── pytorch_inference.py
+│   │   │   ├── resnet18.onnx
+│   │   │   └── resnet18.onnx.data
+│   │   ├── test/
+│   │   │   └── example/
+│   │   │       └── resnet18/
+│   │   │           ├── build.py
+│   │   │           ├── cat.png
+│   │   │           ├── preprocess_image.py
+│   │   │           └── resnet18_test.c
+│   │   └── compile.py
+│   ├── README.md
+│   ├── __init__.py
+│   └── compiler_optimization_roadmap.html
+
 ```
 
 ## 🛠️ 快速开始
