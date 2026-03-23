@@ -106,11 +106,13 @@ python build.py --target generic
 
 ```bash
 # 1. 生成 ResNet18 的 C 代码
-python -m my_ai_compiler.tools.compile my_ai_compiler/tools/model/resnet18.onnx -o build/generic -n resnet18 -t generic
+#python -m my_ai_compiler.tools.compile my_ai_compiler/tools/model/resnet18.onnx -o build/generic -n resnet18 -t generic
+PS C:\Users\aistar\Desktop\M-Compile> python my_ai_compiler/tools/compile.py my_ai_compiler/tools/model/resnet18.onnx -o build/generic -n resnet18 -t generic
 
 # 2. 编译测试程序
-cd my_ai_compiler/tools/test/example/resnet18
-python build.py --target generic
+PS C:\Users\aistar\Desktop\M-Compile> python .\my_ai_compiler\tools\test\example\resnet18\build.py --target generic
+#cd my_ai_compiler/tools/test/example/resnet18
+#python build.py --target generic
 
 # 3. 运行推理测试
 cd ../../../../build/generic
