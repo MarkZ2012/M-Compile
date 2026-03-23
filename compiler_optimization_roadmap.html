@@ -1,0 +1,130 @@
+
+<style>
+.layer { margin: 0 0 18px; }
+.layer-header { display:flex; align-items:center; gap:10px; margin-bottom:10px; }
+.layer-badge { font-size:11px; font-weight:500; padding:3px 10px; border-radius:20px; white-space:nowrap; }
+.cards { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.card { border-radius:10px; padding:13px 15px; cursor:pointer; border:0.5px solid var(--color-border-tertiary); background:var(--color-background-secondary); transition:opacity .15s; }
+.card:hover { opacity:.82; }
+.card-title { font-size:13px; font-weight:500; color:var(--color-text-primary); margin-bottom:4px; }
+.card-sub { font-size:12px; color:var(--color-text-secondary); line-height:1.5; }
+.tag { display:inline-block; font-size:10px; font-weight:500; padding:1px 7px; border-radius:10px; margin-top:6px; }
+
+.l1 .layer-badge { background:#E1F5EE; color:#085041; }
+.l1 .card { border-color:#9FE1CB; }
+.l1 .tag { background:#E1F5EE; color:#0F6E56; }
+
+.l2 .layer-badge { background:#E6F1FB; color:#0C447C; }
+.l2 .card { border-color:#B5D4F4; }
+.l2 .tag { background:#E6F1FB; color:#185FA5; }
+
+.l3 .layer-badge { background:#EEEDFE; color:#3C3489; }
+.l3 .card { border-color:#CECBF6; }
+.l3 .tag { background:#EEEDFE; color:#534AB7; }
+
+.l4 .layer-badge { background:#FAEEDA; color:#633806; }
+.l4 .card { border-color:#FAC775; }
+.l4 .tag { background:#FAEEDA; color:#854F0B; }
+</style>
+
+<div class="layer l1">
+  <div class="layer-header">
+    <span class="layer-badge">层 1 — 优化 pass（现在最值得做）</span>
+  </div>
+  <div class="cards">
+    <div class="card" onclick="sendPrompt('M-Compile 中怎么实现 Conv+BN+ReLU 算子融合？')">
+      <div class="card-title">Conv-BN-ReLU 算子融合</div>
+      <div class="card-sub">把 BatchNorm 的权重折叠进 Conv 权重，消除独立 BN kernel 调用，减少内存读写往返</div>
+      <span class="tag">消除 batchnorm.c 的运行时开销</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 的 buffer 复用策略有什么可以改进的？')">
+      <div class="card-title">Buffer 复用 / 内存规划</div>
+      <div class="card-sub">当前 allocator 为每个中间结果静态分配。可以做生命周期分析，让已死亡的 buffer 在后续节点中复用，大幅压缩 peak 内存</div>
+      <span class="tag">嵌入式设备上效果最显著</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么做常量传播和死代码消除的改进？')">
+      <div class="card-title">常量折叠增强</div>
+      <div class="card-sub">现有 constant_fold.py 已有框架，可以扩展：把 BN 参数在编译期直接算入 Conv 偏置，Reshape/Flatten 在静态 shape 已知时直接消除</div>
+      <span class="tag">已有 pass_manager 框架</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么实现 im2col 或 Winograd 来加速 conv2d？')">
+      <div class="card-title">Conv 实现升级</div>
+      <div class="card-sub">现在 conv2d.c 是朴素实现。im2col + GEMM 的分解方式能充分利用缓存局部性；Winograd 对 3×3 kernel 有理论 2.25× 加速</div>
+      <span class="tag">ResNet18 推理速度直接受益</span>
+    </div>
+  </div>
+</div>
+
+<div class="layer l2">
+  <div class="layer-header">
+    <span class="layer-badge">层 2 — 代码生成质量</span>
+  </div>
+  <div class="cards">
+    <div class="card" onclick="sendPrompt('M-Compile 怎么生成 loop tiling 和 loop unrolling 的 C 代码？')">
+      <div class="card-title">Loop tiling / unrolling</div>
+      <div class="card-sub">在 emit_conv 等方法中生成带 tile 参数的循环体，让 L1/L2 cache 命中率大幅提升；unroll factor 可以写进 KernelSpec</div>
+      <span class="tag">generic 平台也能受益</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么在 generic C 里用 OpenMP 并行？')">
+      <div class="card-title">OpenMP 多线程并行</div>
+      <div class="card-sub">在 emit_conv / emit_gemm 生成的外层循环加 #pragma omp parallel for，CMakeLists 加 find_package(OpenMP)，零硬件依赖地利用多核</div>
+      <span class="tag">服务器场景立竿见影</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 的权重加载怎么改成 mmap？')">
+      <div class="card-title">权重 mmap 懒加载</div>
+      <div class="card-sub">目前 _load() 在 init 时把全部权重读进内存。改用 mmap 后 OS 按需换页，首次推理延迟下降，冷启动内存占用减半</div>
+      <span class="tag">改 runtime/src/loader.c</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么支持 int8 量化权重？')">
+      <div class="card-title">INT8 量化权重</div>
+      <div class="card-sub">权重存 int8 二进制，加载时反量化或直接用 int8 kernel 计算。模型体积压缩 4×，嵌入式 flash 占用大幅下降</div>
+      <span class="tag">需要新增 quantize pass</span>
+    </div>
+  </div>
+</div>
+
+<div class="layer l3">
+  <div class="layer-header">
+    <span class="layer-badge">层 3 — 编译器基础设施</span>
+  </div>
+  <div class="cards">
+    <div class="card" onclick="sendPrompt('M-Compile 的 Graph IR 怎么改进以支持动态 shape？')">
+      <div class="card-title">动态 shape 支持</div>
+      <div class="card-sub">现在 shape_infer 要求编译期已知所有维度。加入符号维度（如 batch=N）后，生成的 C 函数接受运行时 shape 参数，支持变长输入</div>
+      <span class="tag">graph_ir.py + shape_infer.py</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么做算子图的可视化调试？')">
+      <div class="card-title">Graph 可视化 / 调试器</div>
+      <div class="card-sub">在 optimizer 之前和之后各 dump 一次 Graphviz DOT 文件，直观看到哪些节点被融合/消除，大幅降低 pass 调试成本</div>
+      <span class="tag">加一个 tools/viz.py 即可</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么建立数值精度测试框架？')">
+      <div class="card-title">数值精度回归测试</div>
+      <div class="card-sub">用 PyTorch 跑同一张图的输出作为 golden，与生成 C 代码的输出做 cosine similarity 对比，自动化验证每次优化不破坏精度</div>
+      <span class="tag">tools/test/ 已有框架可扩展</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么扩展支持更多 ONNX 算子？')">
+      <div class="card-title">算子覆盖率扩展</div>
+      <div class="card-sub">目前支持 ResNet 系列够用，但 MobileNet 需要 DepthwiseConv，BERT 需要 LayerNorm / Attention。按优先级排队实现</div>
+      <span class="tag">DepthwiseConv 优先级最高</span>
+    </div>
+  </div>
+</div>
+
+<div class="layer l4">
+  <div class="layer-header">
+    <span class="layer-badge">层 4 — 长期演进</span>
+  </div>
+  <div class="cards">
+    <div class="card" onclick="sendPrompt('M-Compile 怎么实现自动 tuning 选择最优 tile 参数？')">
+      <div class="card-title">Auto-tuning</div>
+      <div class="card-sub">对 tile size、unroll factor 等超参数做搜索（类似 TVM 的 AutoScheduler），在目标机器上测速后选最优配置写入 KernelSpec</div>
+      <span class="tag">需要 benchmarking 基础设施</span>
+    </div>
+    <div class="card" onclick="sendPrompt('M-Compile 怎么做多算子的 pipeline 并行？')">
+      <div class="card-title">算子间流水线并行</div>
+      <div class="card-sub">分析节点依赖图，把无数据依赖的子图分配到不同线程并行执行，而不是现在的严格串行遍历</div>
+      <span class="tag">需要任务图调度器</span>
+    </div>
+  </div>
+</div>
