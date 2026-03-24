@@ -105,9 +105,16 @@ class CEmitter:
         lines.append("// Weights")
         for name, tensor in graph.tensors.items():
             if tensor.data is not None:
-                lines.append(
-                    f"static float {_safe(name)}[{_prod(tensor.shape)}];"
-                )
+                safe_name = _safe(name)
+                size = _prod(tensor.shape)
+                # 根据数据类型选择正确的C类型
+                dtype = getattr(tensor, 'dtype', 'float32')
+                if dtype == 'int8':
+                    lines.append(f"static int8_t {safe_name}[{size}];")
+                elif dtype == 'int32':
+                    lines.append(f"static int32_t {safe_name}[{size}];")
+                else:
+                    lines.append(f"static float {safe_name}[{size}];")
         lines.append("")
 
         # --- 中间激活 buffer 声明 ---
@@ -126,6 +133,22 @@ class CEmitter:
             "    return 0;",
             "}",
             "",
+            "static int _load_int8(const char* p, int8_t* b, int n) {",
+            '    FILE* f = fopen(p,"rb");',
+            '    if(!f){fprintf(stderr,"[ERROR] %s\\n",p);return -1;}',
+            "    int got=(int)fread(b,sizeof(int8_t),n,f); fclose(f);",
+            '    if(got!=n){fprintf(stderr,"[ERROR] %s want %d got %d\\n",p,n,got);return -1;}',
+            "    return 0;",
+            "}",
+            "",
+            "static int _load_int32(const char* p, int32_t* b, int n) {",
+            '    FILE* f = fopen(p,"rb");',
+            '    if(!f){fprintf(stderr,"[ERROR] %s\\n",p);return -1;}',
+            "    int got=(int)fread(b,sizeof(int32_t),n,f); fclose(f);",
+            '    if(got!=n){fprintf(stderr,"[ERROR] %s want %d got %d\\n",p,n,got);return -1;}',
+            "    return 0;",
+            "}",
+            "",
         ]
 
         # --- model_init: 加载权重 ---
@@ -134,9 +157,19 @@ class CEmitter:
             if tensor.data is not None:
                 safe = _safe(name)
                 size = _prod(tensor.shape)
-                lines.append(
-                    f'    if(_load("weights/{safe}.bin",{safe},{size}))return -1;'
-                )
+                # 根据数据类型选择正确的加载函数
+                if hasattr(tensor, 'dtype') and tensor.dtype == 'int8':
+                    lines.append(
+                        f'    if(_load_int8("weights/{safe}.bin",{safe},{size}))return -1;'
+                    )
+                elif hasattr(tensor, 'dtype') and tensor.dtype == 'int32':
+                    lines.append(
+                        f'    if(_load_int32("weights/{safe}.bin",{safe},{size}))return -1;'
+                    )
+                else:
+                    lines.append(
+                        f'    if(_load("weights/{safe}.bin",{safe},{size}))return -1;'
+                    )
         lines += ["    return 0;", "}", ""]
 
         # --- model_forward: 逐节点派发 ---
@@ -177,15 +210,77 @@ class CEmitter:
     # ------------------------------------------------------------------
 
     def _save_weights(self, graph: Graph) -> None:
+        """保存权重为二进制文件，支持量化权重"""
         weights_dir = os.path.join(self.output_dir, "weights")
         os.makedirs(weights_dir, exist_ok=True)
         count = 0
+        quant_count = 0
+        
         for name, tensor in graph.tensors.items():
             if tensor.data is not None:
                 out_path = os.path.join(weights_dir, f"{_safe(name)}.bin")
-                tensor.data.astype(np.float32).tofile(out_path)
+                # 检查是否为量化权重
+                if hasattr(tensor, 'dtype') and tensor.dtype.startswith('int'):
+                    # 量化权重：根据dtype保存
+                    if tensor.dtype == 'int8':
+                        tensor.data.astype(np.int8).tofile(out_path)
+                        quant_count += 1
+                    elif tensor.dtype == 'int16':
+                        tensor.data.astype(np.int16).tofile(out_path)
+                        quant_count += 1
+                    else:
+                        tensor.data.tofile(out_path)
+                else:
+                    # 浮点权重
+                    tensor.data.astype(np.float32).tofile(out_path)
                 count += 1
-        print(f"  [CEmitter] Saved {count} weight files to '{weights_dir}'")
+        
+        if quant_count > 0:
+            print(f"  [CEmitter] Saved {count} weight files ({quant_count} quantized) to '{weights_dir}'")
+        else:
+            print(f"  [CEmitter] Saved {count} weight files to '{weights_dir}'")
+    
+    def _save_quant_params(self, graph: Graph, model_name: str) -> None:
+        """保存量化参数到C头文件"""
+        quant_params = {}
+        
+        # 收集所有量化参数
+        for node in graph.nodes:
+            if hasattr(node, 'attrs') and node.attrs:
+                if node.attrs.get('quantized', False):
+                    param_name = f"{model_name}_{node.outputs[0]}"
+                    quant_params[param_name] = {
+                        'input_scale': node.attrs.get('input_scale', 1.0),
+                        'input_zp': node.attrs.get('input_zp', 0),
+                        'weight_scale': node.attrs.get('weight_scale', 1.0),
+                        'weight_zp': node.attrs.get('weight_zp', 0),
+                        'output_scale': node.attrs.get('output_scale', 1.0),
+                        'output_zp': node.attrs.get('output_zp', 0),
+                    }
+        
+        if not quant_params:
+            return
+        
+        # 生成量化参数头文件
+        header_path = os.path.join(self.output_dir, f"{model_name}_quant_params.h")
+        with open(header_path, 'w', encoding='utf-8') as f:
+            f.write(f"/* Auto-generated quantization parameters for {model_name} */\n")
+            f.write(f"#ifndef {model_name.upper()}_QUANT_PARAMS_H\n")
+            f.write(f"#define {model_name.upper()}_QUANT_PARAMS_H\n\n")
+            f.write("#include <stdint.h>\n\n")
+            
+            for param_name, params in quant_params.items():
+                f.write(f"/* Quantization parameters for {param_name} */\n")
+                f.write(f"static const float {param_name}_input_scale = {params['input_scale']:.10f};\n")
+                f.write(f"static const int32_t {param_name}_input_zp = {params['input_zp']};\n")
+                f.write(f"static const float {param_name}_weight_scale = {params['weight_scale']:.10f};\n")
+                f.write(f"static const int32_t {param_name}_weight_zp = {params['weight_zp']};\n")
+                f.write(f"static const float {param_name}_output_scale = {params['output_scale']:.10f};\n")
+                f.write(f"static const int32_t {param_name}_output_zp = {params['output_zp']};\n\n")
+            
+            f.write(f"#endif /* {model_name.upper()}_QUANT_PARAMS_H */\n")
+        
+        print(f"  [CEmitter] Saved quantization parameters to '{header_path}'")
 
     # ------------------------------------------------------------------
     # CMakeLists.txt

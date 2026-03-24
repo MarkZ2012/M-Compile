@@ -91,3 +91,75 @@ registry.register(KernelSpec(
     cmake_glob = [_CMAKE],
     notes      = "runtime/ops/generic/softmax.c",
 ))
+
+# ============================================================================
+# 量化算子 (Quantized Operations)
+# ============================================================================
+
+_QUANT_HEADER = '"ops/generic/quant_ops.h"'
+
+registry.register(KernelSpec(
+    op_name    = "quant_conv",
+    c_func     = "op_quant_conv2d_int8",
+    signature  = (
+        "{inp}, {N},{C},{H},{W}, "
+        "{weight}, {Co},{kH},{kW}, "
+        "{bias}, {sH},{sW}, {pH},{pW}, "
+        "{out}, "
+        "{input_scale}, {input_zp}, "
+        "{weight_scale}, {weight_zp}, "
+        "{output_scale}, {output_zp}"
+    ),
+    headers    = [_QUANT_HEADER],
+    cmake_glob = ['"ops/generic/quant_conv2d.c"'],
+    notes      = "runtime/ops/generic/quant_conv2d.c — int8 quantized conv2d",
+))
+
+registry.register(KernelSpec(
+    op_name    = "quant_conv_relu",
+    c_func     = "op_quant_conv2d_relu_int8",
+    signature  = (
+        "{inp}, {N},{C},{H},{W}, "
+        "{weight}, {Co},{kH},{kW}, "
+        "{bias}, {sH},{sW}, {pH},{pW}, "
+        "{out}, "
+        "{input_scale}, {input_zp}, "
+        "{weight_scale}, {weight_zp}, "
+        "{output_scale}, {output_zp}"
+    ),
+    headers    = [_QUANT_HEADER],
+    cmake_glob = ['"ops/generic/quant_conv2d.c"'],
+    notes      = "runtime/ops/generic/quant_conv2d.c — int8 quantized conv2d + relu",
+))
+
+registry.register(KernelSpec(
+    op_name    = "quant_gemm",
+    c_func     = "op_quant_linear_int8",
+    signature  = (
+        "{inp}, {batch}, {in_feat}, "
+        "{weight}, {out_feat}, "
+        "{bias}, {out}, "
+        "{input_scale}, {input_zp}, "
+        "{weight_scale}, {weight_zp}, "
+        "{output_scale}, {output_zp}"
+    ),
+    headers    = [_QUANT_HEADER],
+    cmake_glob = ['"ops/generic/quant_linear.c"'],
+    notes      = "runtime/ops/generic/quant_linear.c — int8 quantized linear/gemm",
+))
+
+registry.register(KernelSpec(
+    op_name    = "quant_gemm_relu",
+    c_func     = "op_quant_linear_relu_int8",
+    signature  = (
+        "{inp}, {batch}, {in_feat}, "
+        "{weight}, {out_feat}, "
+        "{bias}, {out}, "
+        "{input_scale}, {input_zp}, "
+        "{weight_scale}, {weight_zp}, "
+        "{output_scale}, {output_zp}"
+    ),
+    headers    = [_QUANT_HEADER],
+    cmake_glob = ['"ops/generic/quant_linear.c"'],
+    notes      = "runtime/ops/generic/quant_linear.c — int8 quantized linear/gemm + relu",
+))

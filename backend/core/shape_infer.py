@@ -67,6 +67,20 @@ class ShapeInferer:
                 H_out = (H + pads[0] + pads[2] - kH) // strides[0] + 1
                 W_out = (W + pads[1] + pads[3] - kW) // strides[1] + 1
                 result[node.outputs[0]] = [N, C_out, H_out, W_out]
+        
+        # ---- 量化卷积算子（与 Conv 相同的形状推断）----
+        elif op in ("quant_conv", "quant_conv_relu"):
+            s, w = inp(0), inp(1)
+            if len(s) == 4 and len(w) >= 1:
+                pads    = node.attrs.get("pads",    [0, 0, 0, 0])
+                strides = node.attrs.get("strides", [1, 1])
+                N, C, H, W = s
+                C_out = w[0]
+                kH = w[2] if len(w) > 2 else 1
+                kW = w[3] if len(w) > 3 else 1
+                H_out = (H + pads[0] + pads[2] - kH) // strides[0] + 1
+                W_out = (W + pads[1] + pads[3] - kW) // strides[1] + 1
+                result[node.outputs[0]] = [N, C_out, H_out, W_out]
 
         # ---- 逐元素一元算子（shape 透传）----
         elif op in ("Relu", "Add", "Sigmoid", "Tanh"):
@@ -104,6 +118,12 @@ class ShapeInferer:
 
         # ---- Gemm ----
         elif op == "Gemm":
+            s, w = inp(0), inp(1)
+            if s and w:
+                result[node.outputs[0]] = [s[0], w[0]]
+        
+        # ---- 量化 Gemm 算子（与 Gemm 相同的形状推断）----
+        elif op in ("quant_gemm", "quant_gemm_relu"):
             s, w = inp(0), inp(1)
             if s and w:
                 result[node.outputs[0]] = [s[0], w[0]]

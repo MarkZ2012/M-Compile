@@ -197,3 +197,179 @@ class GenericCTarget(BaseTarget):
         spec = self._reg.require("softmax")
         lines.append(spec.render_call(buf=a.var(out), size=size))
         return lines
+
+    # ========================================================================
+    # 量化算子代码生成 (Quantized Operations)
+    # ========================================================================
+
+    def emit_quant_conv(self, node: Node, alloc) -> List[str]:
+        """生成量化卷积代码"""
+        a      = alloc
+        inp    = node.inputs[0]
+        weight = node.inputs[1]
+        bias   = node.inputs[2] if len(node.inputs) > 2 else None
+        out    = node.outputs[0]
+
+        s, ws = a.shape(inp), a.shape(weight)
+        N  = s[0]  if len(s)  > 0 else 1
+        C  = s[1]  if len(s)  > 1 else 1
+        H  = s[2]  if len(s)  > 2 else 1
+        W  = s[3]  if len(s)  > 3 else 1
+        Co = ws[0] if len(ws) > 0 else 1
+        kH = ws[2] if len(ws) > 2 else 1
+        kW = ws[3] if len(ws) > 3 else 1
+
+        strides  = node.attrs.get("strides", [1, 1])
+        pads     = node.attrs.get("pads",    [0, 0, 0, 0])
+        sH, sW   = strides[0], strides[1]
+        pH       = pads[0]
+        pW       = pads[2] if len(pads) > 2 else pads[0]
+        bias_arg = a.var(bias) if bias else "NULL"
+
+        # 获取量化参数
+        input_scale = node.attrs.get("input_scale", 1.0)
+        input_zp = node.attrs.get("input_zp", 0)
+        weight_scale = node.attrs.get("weight_scale", 1.0)
+        weight_zp = node.attrs.get("weight_zp", 0)
+        output_scale = node.attrs.get("output_scale", 1.0)
+        output_zp = node.attrs.get("output_zp", 0)
+
+        spec = self._reg.require("quant_conv")
+        call = spec.render_call(
+            inp=a.var(inp), N=N, C=C, H=H, W=W,
+            weight=a.var(weight), Co=Co, kH=kH, kW=kW,
+            bias=bias_arg, sH=sH, sW=sW, pH=pH, pW=pW,
+            out=a.var(out),
+            input_scale=input_scale, input_zp=input_zp,
+            weight_scale=weight_scale, weight_zp=weight_zp,
+            output_scale=output_scale, output_zp=output_zp,
+        )
+        return [
+            f"    // Quantized Conv [{N},{C},{H},{W}]->[{N},{Co}] k={kH}x{kW} s={sH} p={pH}",
+            f"    // Quant params: in_scale={input_scale}, w_scale={weight_scale}, out_scale={output_scale}",
+            call,
+        ]
+
+    def emit_quant_conv_relu(self, node: Node, alloc) -> List[str]:
+        """生成量化卷积+ReLU代码"""
+        a      = alloc
+        inp    = node.inputs[0]
+        weight = node.inputs[1]
+        bias   = node.inputs[2] if len(node.inputs) > 2 else None
+        out    = node.outputs[0]
+
+        s, ws = a.shape(inp), a.shape(weight)
+        N  = s[0]  if len(s)  > 0 else 1
+        C  = s[1]  if len(s)  > 1 else 1
+        H  = s[2]  if len(s)  > 2 else 1
+        W  = s[3]  if len(s)  > 3 else 1
+        Co = ws[0] if len(ws) > 0 else 1
+        kH = ws[2] if len(ws) > 2 else 1
+        kW = ws[3] if len(ws) > 3 else 1
+
+        strides  = node.attrs.get("strides", [1, 1])
+        pads     = node.attrs.get("pads",    [0, 0, 0, 0])
+        sH, sW   = strides[0], strides[1]
+        pH       = pads[0]
+        pW       = pads[2] if len(pads) > 2 else pads[0]
+        bias_arg = a.var(bias) if bias else "NULL"
+
+        # 获取量化参数
+        input_scale = node.attrs.get("input_scale", 1.0)
+        input_zp = node.attrs.get("input_zp", 0)
+        weight_scale = node.attrs.get("weight_scale", 1.0)
+        weight_zp = node.attrs.get("weight_zp", 0)
+        output_scale = node.attrs.get("output_scale", 1.0)
+        output_zp = node.attrs.get("output_zp", 0)
+
+        spec = self._reg.require("quant_conv_relu")
+        call = spec.render_call(
+            inp=a.var(inp), N=N, C=C, H=H, W=W,
+            weight=a.var(weight), Co=Co, kH=kH, kW=kW,
+            bias=bias_arg, sH=sH, sW=sW, pH=pH, pW=pW,
+            out=a.var(out),
+            input_scale=input_scale, input_zp=input_zp,
+            weight_scale=weight_scale, weight_zp=weight_zp,
+            output_scale=output_scale, output_zp=output_zp,
+        )
+        return [
+            f"    // Quantized Conv+ReLU [{N},{C},{H},{W}]->[{N},{Co}] k={kH}x{kW} s={sH} p={pH}",
+            f"    // Quant params: in_scale={input_scale}, w_scale={weight_scale}, out_scale={output_scale}",
+            call,
+        ]
+
+    def emit_quant_gemm(self, node: Node, alloc) -> List[str]:
+        """生成量化全连接层代码"""
+        a      = alloc
+        x      = node.inputs[0]
+        weight = node.inputs[1]
+        bias   = node.inputs[2] if len(node.inputs) > 2 else None
+        out    = node.outputs[0]
+
+        xs, ws   = a.shape(x), a.shape(weight)
+        batch    = xs[0] if len(xs) > 0 else 1
+        in_feat  = xs[1] if len(xs) > 1 else (ws[1] if len(ws) > 1 else 512)
+        out_feat = ws[0] if len(ws) > 0 else 1000
+        bias_arg = a.var(bias) if bias else "NULL"
+
+        # 获取量化参数
+        input_scale = node.attrs.get("input_scale", 1.0)
+        input_zp = node.attrs.get("input_zp", 0)
+        weight_scale = node.attrs.get("weight_scale", 1.0)
+        weight_zp = node.attrs.get("weight_zp", 0)
+        output_scale = node.attrs.get("output_scale", 1.0)
+        output_zp = node.attrs.get("output_zp", 0)
+
+        spec = self._reg.require("quant_gemm")
+        spec_softmax = self._reg.require("softmax")
+        call = spec.render_call(
+            inp=a.var(x), weight=a.var(weight), bias=bias_arg,
+            batch=batch, in_feat=in_feat, out_feat=out_feat,
+            out=a.var(out),
+            input_scale=input_scale, input_zp=input_zp,
+            weight_scale=weight_scale, weight_zp=weight_zp,
+            output_scale=output_scale, output_zp=output_zp,
+        )
+        return [
+            f"    // Quantized Gemm [{batch},{in_feat}]->[{batch},{out_feat}]",
+            f"    // Quant params: in_scale={input_scale}, w_scale={weight_scale}, out_scale={output_scale}",
+            call,
+            spec_softmax.render_call(buf=a.var(out), size=out_feat),
+        ]
+
+    def emit_quant_gemm_relu(self, node: Node, alloc) -> List[str]:
+        """生成量化全连接层+ReLU代码"""
+        a      = alloc
+        x      = node.inputs[0]
+        weight = node.inputs[1]
+        bias   = node.inputs[2] if len(node.inputs) > 2 else None
+        out    = node.outputs[0]
+
+        xs, ws   = a.shape(x), a.shape(weight)
+        batch    = xs[0] if len(xs) > 0 else 1
+        in_feat  = xs[1] if len(xs) > 1 else (ws[1] if len(ws) > 1 else 512)
+        out_feat = ws[0] if len(ws) > 0 else 1000
+        bias_arg = a.var(bias) if bias else "NULL"
+
+        # 获取量化参数
+        input_scale = node.attrs.get("input_scale", 1.0)
+        input_zp = node.attrs.get("input_zp", 0)
+        weight_scale = node.attrs.get("weight_scale", 1.0)
+        weight_zp = node.attrs.get("weight_zp", 0)
+        output_scale = node.attrs.get("output_scale", 1.0)
+        output_zp = node.attrs.get("output_zp", 0)
+
+        spec = self._reg.require("quant_gemm_relu")
+        call = spec.render_call(
+            inp=a.var(x), weight=a.var(weight), bias=bias_arg,
+            batch=batch, in_feat=in_feat, out_feat=out_feat,
+            out=a.var(out),
+            input_scale=input_scale, input_zp=input_zp,
+            weight_scale=weight_scale, weight_zp=weight_zp,
+            output_scale=output_scale, output_zp=output_zp,
+        )
+        return [
+            f"    // Quantized Gemm+ReLU [{batch},{in_feat}]->[{batch},{out_feat}]",
+            f"    // Quant params: in_scale={input_scale}, w_scale={weight_scale}, out_scale={output_scale}",
+            call,
+        ]

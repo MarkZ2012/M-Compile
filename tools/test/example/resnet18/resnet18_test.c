@@ -2,7 +2,7 @@
  * ResNet18 C推理测试程序
  * 用于测试编译生成的模型
  */
-#include "resnet18.h"
+#include "model.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,7 +21,7 @@ static void cd_to_exe_dir(void) {
 #endif
 
 // 声明forward函数
-void resnet18_forward(const float* input, float* output);
+void model_forward(const float* input, float* output);
 
 // ImageNet中与猫相关的类别
 const char* cat_labels[] = {
@@ -72,7 +72,7 @@ int main(int argc, char** argv) {
     
     // 1. 初始化模型
     printf("[1/4] Initializing model...\n");
-    if (resnet18_init() != 0) {
+    if (model_init() != 0) {
         printf("Error: Failed to initialize model\n");
         return 1;
     }
@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     if (!input_data) {
         printf("Error: Failed to load input data\n");
         printf("  Please run 'python preprocess_image.py' first\n");
-        resnet18_cleanup();
+        model_cleanup();
         return 1;
     }
     printf("  Input data loaded: %d floats\n\n", input_size);
@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     float output[1000];
     
     // 调用forward函数
-    resnet18_forward(input_data, output);
+    model_forward(input_data, output);
 
     // === 加入以下诊断代码 ===
     printf("\n[DIAG] Output array check:\n");
@@ -178,7 +178,7 @@ int main(int argc, char** argv) {
     
     // 清理
     free(input_data);
-    resnet18_cleanup();
+    model_cleanup();
     
     printf("Test completed successfully!\n");
     

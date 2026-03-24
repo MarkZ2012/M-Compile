@@ -13,6 +13,32 @@ Quantization passes 自动注册。
 from ...pass_manager import FunctionPass, register_pass
 from .ptq import post_training_quantize
 from .qat import qat_fold
+from .quant_config import QuantConfig, QuantMode, CalibrationMethod
+from .quantizer import Quantizer, MinMaxCalibrator, MSECalibrator
+from .quant_params_exporter import QuantParamsExporter, QuantParamsExport, LayerQuantParams
 
+# 创建带配置的PTQ pass
+def create_ptq_pass(config: QuantConfig = None):
+    """创建带配置的PTQ pass"""
+    def ptq_with_config(graph):
+        return post_training_quantize(graph, config)
+    return ptq_with_config
+
+# 注册passes
 register_pass("post_training_quantize", FunctionPass("post_training_quantize", post_training_quantize))
 register_pass("qat_fold",               FunctionPass("qat_fold",               qat_fold))
+
+# 导出符号
+__all__ = [
+    "QuantConfig",
+    "QuantMode", 
+    "CalibrationMethod",
+    "Quantizer",
+    "MinMaxCalibrator",
+    "MSECalibrator",
+    "QuantParamsExporter",
+    "QuantParamsExport",
+    "LayerQuantParams",
+    "post_training_quantize",
+    "create_ptq_pass",
+]
