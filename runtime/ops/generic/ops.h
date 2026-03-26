@@ -13,6 +13,7 @@ void op_conv2d(
     const float* bias,
     int stride_h, int stride_w,
     int pad_h,    int pad_w,
+    int groups,
     float* output
 );
 
@@ -48,3 +49,13 @@ void op_linear(const float* x, const float* w, const float* b,
 
 // Softmax in-place
 void op_softmax(float* x, int n);
+
+// Clip (typically ReLU6): y = min(max(x, min_v), max_v)
+// Note: in current compiler usage, min_v/max_v are scalar constants.
+void op_clip(
+    const float* x,
+    const float* min_v,
+    const float* max_v,
+    int n,
+    float* out
+);

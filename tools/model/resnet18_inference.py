@@ -55,7 +55,7 @@ def get_imagenet_labels():
     return cat_labels
 
 
-def predict(model, input_batch, top_k=5):
+def predict(model, input_batch, top_k=10):
     """进行预测"""
     with torch.no_grad():
         output = model(input_batch)

@@ -70,6 +70,7 @@ class GenericCTarget(BaseTarget):
 
         strides  = node.attrs.get("strides", [1, 1])
         pads     = node.attrs.get("pads",    [0, 0, 0, 0])
+        groups   = node.attrs.get("group", node.attrs.get("groups", 1))
         sH, sW   = strides[0], strides[1]
         pH       = pads[0]
         pW       = pads[2] if len(pads) > 2 else pads[0]
@@ -80,6 +81,7 @@ class GenericCTarget(BaseTarget):
             inp=a.var(inp), N=N, C=C, H=H, W=W,
             weight=a.var(weight), Co=Co, kH=kH, kW=kW,
             bias=bias_arg, sH=sH, sW=sW, pH=pH, pW=pW,
+            groups=groups,
             out=a.var(out),
         )
         return [
@@ -140,6 +142,205 @@ class GenericCTarget(BaseTarget):
         lines.append(f"    // Add {a.var(a_in)} + {a.var(b_in)}")
         spec = self._reg.require("add")
         lines.append(spec.render_call(out=a.var(out), b=a.var(b_in), size=size))
+        return lines
+
+    def emit_clip(self, node: Node, alloc) -> List[str]:
+        a = alloc
+        x, min_v, max_v = node.inputs[0], node.inputs[1], node.inputs[2]
+        out = node.outputs[0]
+        size = a.size(x)
+        spec = self._reg.require("clip")
+        return [
+            f"    // Clip {a.var(x)} -> {a.var(out)}",
+            spec.render_call(x=a.var(x), min_v=a.var(min_v), max_v=a.var(max_v), size=size, out=a.var(out)),
+        ]
+
+    def emit_concat(self, node: Node, alloc) -> List[str]:
+        """
+        Concat (NCHW, rank4) - 支持 axis=1 的通道拼接。
+        其它情况退化为 TODO。
+        """
+        a = alloc
+        axis = node.attrs.get("axis", 1)
+        x_out = node.outputs[0]
+        in_names = node.inputs
+        out_shape = a.shape(x_out)
+        if len(out_shape) != 4 or axis != 1:
+            return [f"    /* TODO: concat unsupported axis={axis} shape={out_shape} */"]
+        N, outC, H, W = out_shape
+        lines: List[str] = [f"    // Concat(axis={axis}) -> {a.var(x_out)}"]
+        lines.append(f"    const int HW = {H} * {W};")
+
+        chan_offset = 0
+        for idx, x_in in enumerate(in_names):
+            s = a.shape(x_in)
+            if len(s) != 4:
+                return [f"    /* TODO: concat input rank!=4 for {x_in} */"]
+            Ci = s[1]
+            in_ptr = a.var(x_in)
+            out_ptr = a.var(x_out)
+            # 每个输入在输出中的通道段：[chan_offset, chan_offset+Ci)
+            lines.append(f"    for (int n = 0; n < {N}; n++) {{")
+            lines.append(
+                f"        memcpy({out_ptr} + (n*{outC} + {chan_offset})*HW, "
+                f"{in_ptr} + (n*{Ci})*HW, {Ci}*HW*sizeof(float));"
+            )
+            lines.append("    }")
+            chan_offset += Ci
+
+        return lines
+
+    def emit_transpose(self, node: Node, alloc) -> List[str]:
+        """
+        Transpose (rank4) - 依据 perm 做 NCHW 四维转置。
+        """
+        a = alloc
+        x = node.inputs[0]
+        out = node.outputs[0]
+        x_shape = a.shape(x)
+        out_shape = a.shape(out)
+        perm = node.attrs.get("perm")
+        if len(x_shape) != 4 or len(out_shape) != 4 or not perm or len(perm) != 4:
+            return [f"    /* TODO: transpose unsupported perm={perm} */"]
+        if perm == [0, 1, 2, 3]:
+            size = a.size(x)
+            if a.var(x) != a.var(out):
+                return [f"    memcpy({a.var(out)}, {a.var(x)}, {size}*sizeof(float));"]
+            return ["    // Transpose (identity, no-op)"]
+
+        inN, inC, inH, inW = x_shape
+        outN, outC, outH, outW = out_shape
+
+        # inverse perm：inv[i] = output axis index for input axis i
+        inv = [perm.index(i) for i in range(4)]
+
+        def ovar(axis_idx: int) -> str:
+            return f"o{axis_idx}"
+
+        out_ptr = a.var(out)
+        in_ptr = a.var(x)
+        lines: List[str] = [f"    // Transpose perm={perm}"]
+        lines.append(f"    for (int o0 = 0; o0 < {outN}; o0++) {{")
+        lines.append(f"        for (int o1 = 0; o1 < {outC}; o1++) {{")
+        lines.append(f"            for (int o2 = 0; o2 < {outH}; o2++) {{")
+        lines.append(f"                for (int o3 = 0; o3 < {outW}; o3++) {{")
+
+        # Map output indices back to input indices
+        lines.append(f"                    int i0 = {ovar(inv[0])};")
+        lines.append(f"                    int i1 = {ovar(inv[1])};")
+        lines.append(f"                    int i2 = {ovar(inv[2])};")
+        lines.append(f"                    int i3 = {ovar(inv[3])};")
+
+        lines.append(
+            f"                    {out_ptr}[((o0*{outC} + o1)*{outH} + o2)*{outW} + o3] = "
+            f"{in_ptr}[((i0*{inC} + i1)*{inH} + i2)*{inW} + i3];"
+        )
+
+        lines.append("                }")
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
+        return lines
+
+    def emit_globalaveragepool(self, node: Node, alloc) -> List[str]:
+        """
+        GlobalAveragePool：依据 input 的 [N,C,H,W] 直接复用 ReduceMean 的实现内核。
+        """
+        a = alloc
+        x, out = node.inputs[0], node.outputs[0]
+        s = a.shape(x)
+        N = s[0] if len(s) > 0 else 1
+        C = s[1] if len(s) > 1 else 1
+        H = s[2] if len(s) > 2 else 1
+        W = s[3] if len(s) > 3 else 1
+        spec = self._reg.require("reducemean")
+        call = spec.render_call(inp=a.var(x), N=N, C=C, H=H, W=W, out=a.var(out))
+        return [
+            f"    // GlobalAveragePool [{N},{C},{H},{W}] -> {a.var(out)}",
+            call,
+        ]
+
+    def emit_pad(self, node: Node, alloc) -> List[str]:
+        """
+        Pad (NCHW, rank4) - 仅支持常量 padding value（默认 0）。
+        """
+        a = alloc
+        x = node.inputs[0]
+        out = node.outputs[0]
+        x_shape = a.shape(x)
+        out_shape = a.shape(out)
+        if len(x_shape) != 4 or len(out_shape) != 4:
+            return [f"    /* TODO: pad unsupported */"]
+
+        N, C, H, W = x_shape
+        _, _, H_out, W_out = out_shape
+        pads = node.attrs.get("pads", [0, 0, 0, 0])
+        value = float(node.attrs.get("value", 0.0))
+        if len(pads) == 8:
+            pt, pl, pb, pr = pads[2], pads[3], pads[6], pads[7]
+        elif len(pads) == 4:
+            pt, pl, pb, pr = pads
+        else:
+            pt = pl = pb = pr = 0
+
+        in_ptr = a.var(x)
+        out_ptr = a.var(out)
+        pad_val = f"{value:.8f}f"
+
+        lines: List[str] = [f"    // Pad [{N},{C},{H},{W}] -> [{N},{C},{H_out},{W_out}]"]
+        lines.append(f"    for (int n = 0; n < {N}; n++) {{")
+        lines.append(f"        for (int c = 0; c < {C}; c++) {{")
+        lines.append(f"            for (int oh = 0; oh < {H_out}; oh++) {{")
+        lines.append(f"                for (int ow = 0; ow < {W_out}; ow++) {{")
+        lines.append(f"                    int ih = oh - {pt};")
+        lines.append(f"                    int iw = ow - {pl};")
+        lines.append(f"                    float v = {pad_val};")
+        lines.append(f"                    if (ih >= 0 && ih < {H} && iw >= 0 && iw < {W}) {{")
+        lines.append(
+            f"                        v = {in_ptr}[((n*{C} + c)*{H} + ih)*{W} + iw];"
+        )
+        lines.append("                    }")
+        lines.append(
+            f"                    {out_ptr}[((n*{C} + c)*{H_out} + oh)*{W_out} + ow] = v;"
+        )
+        lines.append("                }")
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
+        return lines
+
+    def emit_upsample(self, node: Node, alloc) -> List[str]:
+        """
+        Upsample (NCHW, rank4) - 最近邻插值。
+        """
+        a = alloc
+        x = node.inputs[0]
+        out = node.outputs[0]
+        x_shape = a.shape(x)
+        out_shape = a.shape(out)
+        if len(x_shape) != 4 or len(out_shape) != 4:
+            return [f"    /* TODO: upsample unsupported */"]
+
+        N, C, H, W = x_shape
+        _, _, H_out, W_out = out_shape
+        in_ptr = a.var(x)
+        out_ptr = a.var(out)
+
+        lines: List[str] = [f"    // Upsample nearest [{N},{C},{H},{W}] -> [{N},{C},{H_out},{W_out}]"]
+        lines.append(f"    for (int n = 0; n < {N}; n++) {{")
+        lines.append(f"        for (int c = 0; c < {C}; c++) {{")
+        lines.append(f"            for (int oh = 0; oh < {H_out}; oh++) {{")
+        lines.append(f"                int ih = (oh * {H}) / {H_out};")
+        lines.append(f"                for (int ow = 0; ow < {W_out}; ow++) {{")
+        lines.append(f"                    int iw = (ow * {W}) / {W_out};")
+        lines.append(
+            f"                    {out_ptr}[((n*{C} + c)*{H_out} + oh)*{W_out} + ow] = "
+            f"{in_ptr}[((n*{C} + c)*{H} + ih)*{W} + iw];"
+        )
+        lines.append("                }")
+        lines.append("            }")
+        lines.append("        }")
+        lines.append("    }")
         return lines
 
     def emit_reducemean(self, node: Node, alloc) -> List[str]:

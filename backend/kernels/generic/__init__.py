@@ -27,6 +27,7 @@ registry.register(KernelSpec(
         "{inp}, {N},{C},{H},{W}, "
         "{weight}, {Co},{kH},{kW}, "
         "{bias}, {sH},{sW}, {pH},{pW}, "
+        "{groups}, "
         "{out}"
     ),
     headers    = [_HEADER],
@@ -60,6 +61,15 @@ registry.register(KernelSpec(
     op_name    = "add",
     c_func     = "op_add",
     signature  = "{out}, {b}, {size}",
+    headers    = [_HEADER],
+    cmake_glob = [_CMAKE],
+    notes      = "runtime/ops/generic/math_ops.c",
+))
+
+registry.register(KernelSpec(
+    op_name    = "clip",
+    c_func     = "op_clip",
+    signature  = "{x}, {min_v}, {max_v}, {size}, {out}",
     headers    = [_HEADER],
     cmake_glob = [_CMAKE],
     notes      = "runtime/ops/generic/math_ops.c",
