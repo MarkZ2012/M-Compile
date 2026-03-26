@@ -85,6 +85,14 @@ void myrt_free(myrt_model_t* model);
  */
 const char* myrt_get_error(void);
 
+/**
+ * 从单独的权重文件加载权重
+ * @param model 模型指针
+ * @param weights_path 权重文件路径
+ * @return 成功返回0，失败返回-1
+ */
+int myrt_load_weights_from_file(myrt_model_t* model, const char* weights_path);
+
 #ifdef __cplusplus
 }
 #endif

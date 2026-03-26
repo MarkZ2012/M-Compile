@@ -59,3 +59,51 @@ void op_clip(
     int n,
     float* out
 );
+
+// Depthwise Conv2D (groups = C_in)
+void op_depthwise_conv2d(
+    const float* input,  int N, int C_in,  int H,    int W,
+    const float* weight, int kH, int kW,
+    const float* bias,
+    int stride_h, int stride_w,
+    int pad_h,    int pad_w,
+    float* output);
+
+// Resize bilinear
+void op_resize_bilinear(
+    const float* input, int N, int C, int H_in, int W_in,
+    float* output, int H_out, int W_out,
+    int align_corners);
+
+// Resize nearest
+void op_resize_nearest(
+    const float* input, int N, int C, int H_in, int W_in,
+    float* output, int H_out, int W_out,
+    int align_corners);
+
+// Concat along channel dimension (axis=1 for NCHW)
+void op_concat(
+    const float** inputs, int num_inputs,
+    int N, const int* C_per_input, int H, int W,
+    float* output);
+
+// Split along channel dimension (axis=1 for NCHW)
+void op_split(
+    const float* input,
+    int N, int C_total, int H, int W,
+    float** outputs, const int* C_per_output, int num_outputs);
+
+// Layer Normalization
+void op_layernorm(
+    const float* x,
+    int N, int norm_size,
+    const float* gamma,
+    const float* beta,
+    float eps,
+    float* output);
+
+// Scaled dot-product attention (single head)
+void op_attention(
+    const float* Q, const float* K, const float* V,
+    int batch, int seq_q, int seq_k, int head_dim,
+    float* output);

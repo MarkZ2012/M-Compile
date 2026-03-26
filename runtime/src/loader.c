@@ -184,3 +184,62 @@ void myrt_free(myrt_model_t* model) {
 const char* myrt_get_error(void) {
     return g_error_msg;
 }
+
+/**
+ * 从单独的权重文件加载权重
+ * @param model 模型指针
+ * @param weights_path 权重文件路径
+ * @return 成功返回0，失败返回-1
+ */
+int myrt_load_weights_from_file(myrt_model_t* model, const char* weights_path) {
+    if (!model || !weights_path) {
+        snprintf(g_error_msg, sizeof(g_error_msg), "Invalid arguments");
+        return -1;
+    }
+    
+    FILE* f = fopen(weights_path, "rb");
+    if (!f) {
+        snprintf(g_error_msg, sizeof(g_error_msg), "Failed to open weights file: %s", weights_path);
+        return -1;
+    }
+    
+    // 获取文件大小
+    fseek(f, 0, SEEK_END);
+    long file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+    
+    // 计算权重数量（float）
+    size_t weight_count = file_size / sizeof(float);
+    if (weight_count == 0) {
+        fclose(f);
+        snprintf(g_error_msg, sizeof(g_error_msg), "Empty weights file");
+        return -1;
+    }
+    
+    // 分配内存
+    float* weights = (float*)malloc(weight_count * sizeof(float));
+    if (!weights) {
+        fclose(f);
+        snprintf(g_error_msg, sizeof(g_error_msg), "Memory allocation failed for weights");
+        return -1;
+    }
+    
+    // 读取权重
+    if (fread(weights, sizeof(float), weight_count, f) != weight_count) {
+        free(weights);
+        fclose(f);
+        snprintf(g_error_msg, sizeof(g_error_msg), "Failed to read weights");
+        return -1;
+    }
+    
+    fclose(f);
+    
+    // 更新模型权重
+    if (model->weights) {
+        free(model->weights);
+    }
+    model->weights = weights;
+    model->weight_count = weight_count;
+    
+    return 0;
+}
