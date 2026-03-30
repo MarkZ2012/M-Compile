@@ -14,10 +14,15 @@ python compile.py resnet18.onnx -t generic -o build/quantized -q --calib-dir ./c
 
 # 量化（weight-only 退化模式，兼容旧行为）
 python compile.py resnet18.onnx -t generic -o build/quantized -q
+
+平台兼容性
+----------
+本脚本支持 Windows 和 Linux 平台，自动检测操作系统并适配路径格式。
 """
 import sys
 import os
 import argparse
+import platform
 import numpy as np
 from pathlib import Path
 from typing import Optional, List

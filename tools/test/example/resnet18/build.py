@@ -10,6 +10,12 @@ ResNet18 Test Compilation Script
 用法：
   python build.py                    # 直接编译（依赖已有文件）
   python build.py --target generic   # 拷贝文件并编译
+
+平台兼容性
+----------
+本脚本支持 Windows 和 Linux 平台：
+  - Windows: 生成 resnet18_test.exe
+  - Linux:   生成 resnet18_test
 """
 
 import os
@@ -17,9 +23,12 @@ import sys
 import subprocess
 import shutil
 import argparse
+import platform
 from pathlib import Path
 
-# 获取项目根目录
+IS_WINDOWS = platform.system() == "Windows"
+EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
+
 script_dir = Path(__file__).parent
 # script_dir: my_ai_compiler/tools/test/example/resnet18
 # 需要向上5级到项目根目录 (M-Compile)
@@ -32,7 +41,7 @@ build_dir = project_root / "build" / "generic"
 # runtime在my_ai_compiler目录下
 runtime_ops_dir = project_root / "my_ai_compiler" / "runtime" / "ops" / "generic"
 test_file = script_dir / "resnet18_test.c"
-output_exe = script_dir / "resnet18_test.exe"
+output_exe = script_dir / f"resnet18_test{EXE_SUFFIX}"
 
 
 def copy_files_for_target(source_dir=None):
@@ -232,7 +241,7 @@ def compile_test(use_build_dir=False):
         current_build_dir = build_dir
         current_runtime_ops_dir = build_dir / "ops" / "generic"
         current_test_file = build_dir / "resnet18_test.c"
-        current_output_exe = build_dir / "resnet18_test.exe"
+        current_output_exe = build_dir / f"resnet18_test{EXE_SUFFIX}"
     else:
         current_build_dir = build_dir
         current_runtime_ops_dir = runtime_ops_dir
@@ -333,7 +342,7 @@ def run_test(use_build_dir=False):
     
     # 根据模式确定可执行文件和运行目录
     if use_build_dir:
-        exe_path = build_dir / "resnet18_test.exe"
+        exe_path = build_dir / f"resnet18_test{EXE_SUFFIX}"
         run_dir = build_dir
     else:
         exe_path = output_exe
@@ -421,11 +430,15 @@ def main():
     
     # 根据模式确定输出路径
     if use_build_dir:
-        final_output_exe = build_dir / "resnet18_test.exe"
+        final_output_exe = build_dir / f"resnet18_test{EXE_SUFFIX}"
         final_run_dir = build_dir
     else:
         final_output_exe = output_exe
         final_run_dir = script_dir
+    
+    # 根据平台确定运行命令格式
+    run_cmd_prefix = ".\\" if IS_WINDOWS else "./"
+    exe_name = f"resnet18_test{EXE_SUFFIX}"
     
     print("\n" + "=" * 60)
     if compile_success and test_success:
@@ -433,13 +446,13 @@ def main():
         print(f"可执行文件: {final_output_exe}")
         print("\n手动运行测试:")
         print(f"  cd {final_run_dir}")
-        print(f"  .\\resnet18_test.exe")
+        print(f"  {run_cmd_prefix}{exe_name}")
     elif compile_success:
         print("编译完成!")
         print(f"可执行文件: {final_output_exe}")
         print("\n手动运行测试:")
         print(f"  cd {final_run_dir}")
-        print(f"  .\\resnet18_test.exe")
+        print(f"  {run_cmd_prefix}{exe_name}")
     print("=" * 60)
     
     sys.exit(0 if (compile_success and test_success) else 1)

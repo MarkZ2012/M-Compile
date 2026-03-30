@@ -6,6 +6,12 @@ MobileNetV2 Test Compilation Script
 依赖：
   - build/mobilenetv2_generic/ （由 my_ai_compiler/tools/compile.py 生成）
   - runtime/ops/generic/ （拷贝到 build 目录下的 ops/generic）
+
+平台兼容性
+----------
+本脚本支持 Windows 和 Linux 平台：
+  - Windows: 生成 mobilenetv2_test.exe
+  - Linux:   生成 mobilenetv2_test
 """
 
 import os
@@ -13,8 +19,11 @@ import sys
 import subprocess
 import shutil
 import argparse
+import platform
 from pathlib import Path
 
+IS_WINDOWS = platform.system() == "Windows"
+EXE_SUFFIX = ".exe" if IS_WINDOWS else ""
 
 script_dir = Path(__file__).parent
 # 需要向上 5 级到项目根目录 M-Compile
@@ -23,7 +32,7 @@ project_root = script_dir.parent.parent.parent.parent.parent
 build_dir = project_root / "build" / "mobilenetv2_generic"
 runtime_ops_dir = project_root / "my_ai_compiler" / "runtime" / "ops" / "generic"
 test_file = script_dir / "mobilenetv2_test.c"
-output_exe = script_dir / "mobilenetv2_test.exe"
+output_exe = script_dir / f"mobilenetv2_test{EXE_SUFFIX}"
 
 
 def copy_files_for_target(source_dir=None):
@@ -152,7 +161,7 @@ def compile_test(use_build_dir=False):
         current_build_dir = build_dir
         current_runtime_ops_dir = build_dir / "ops" / "generic"
         current_test_file = build_dir / "mobilenetv2_test.c"
-        current_output_exe = build_dir / "mobilenetv2_test.exe"
+        current_output_exe = build_dir / f"mobilenetv2_test{EXE_SUFFIX}"
     else:
         current_build_dir = build_dir
         current_runtime_ops_dir = runtime_ops_dir
@@ -215,7 +224,7 @@ def run_test(use_build_dir=False):
     print("=" * 60)
 
     if use_build_dir:
-        exe_path = build_dir / "mobilenetv2_test.exe"
+        exe_path = build_dir / f"mobilenetv2_test{EXE_SUFFIX}"
         run_dir = build_dir
     else:
         exe_path = output_exe
